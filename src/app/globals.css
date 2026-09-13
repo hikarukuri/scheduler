@@ -1,0 +1,206 @@
+@import "tailwindcss";
+
+/**
+ * Design tokens — spec §8.
+ *
+ * Near-black on off-white. One accent, used for exactly one thing: a deadline
+ * inside 14 days. Nothing else is coloured, and deadline kinds are never
+ * colour-coded. Column separation is space and a single hairline, never
+ * alternating fills, cards or shadows.
+ */
+:root {
+  --paper: #fbfbfb;
+  --surface: #ffffff;
+  --ink: #131314;
+  --ink-2: #5a5a5c;
+  --ink-3: #898a8c;
+  --hairline: #e2e2e2;
+  /* Overridden at runtime from settings (§9). */
+  --accent: #0f5b43;
+  /* The one selection treatment. Not a colour: ink at low opacity. */
+  --selected: rgba(19, 19, 20, 0.04);
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-hairline: var(--hairline);
+  --color-accent: var(--accent);
+  --color-selected: var(--selected);
+
+  /* §8.2 — a serif with real weight contrast, and a neutral sans. Each chain
+     falls through to a Japanese face so mixed scripts do not shift weight. */
+  --font-serif: var(--font-source-serif), var(--font-noto-serif-jp), Georgia, "Times New Roman", serif;
+  --font-sans: var(--font-inter), var(--font-noto-sans-jp), system-ui, -apple-system, sans-serif;
+
+  /* §5.4 — below this the columns no longer fit side by side. */
+  --breakpoint-wide: 1100px;
+
+  --text-2xs: 10.5px;
+  --text-2xs--line-height: 1.4;
+  --text-xs: 11.5px;
+  --text-xs--line-height: 1.45;
+  --text-sm: 12.5px;
+  --text-sm--line-height: 1.5;
+  --text-base: 13.5px;
+  --text-base--line-height: 1.55;
+  --text-md: 15px;
+  --text-md--line-height: 1.45;
+  --text-lg: 17px;
+  --text-lg--line-height: 1.3;
+  --text-xl: 21px;
+  --text-xl--line-height: 1.2;
+  --text-2xl: 27px;
+  --text-2xl--line-height: 1.15;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overscroll-behavior: none;
+}
+
+/* Countdowns and counts line up column to column. */
+.numeral {
+  font-family: var(--font-serif);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--ink-3);
+}
+
+:focus-visible {
+  outline: 1.5px solid var(--ink);
+  outline-offset: 1px;
+}
+
+/* Quiet scrollbars; the columns are the design. */
+.scroll-column {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--hairline) transparent;
+}
+.scroll-column::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.scroll-column::-webkit-scrollbar-thumb {
+  background: var(--hairline);
+  border-radius: 3px;
+}
+.scroll-column::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/**
+ * Motion — spec §8.4. Two permitted uses only: a task moving between columns,
+ * and a column expanding or collapsing. Both brief. No entrance animations, no
+ * hover transitions on rows.
+ */
+@keyframes task-landed {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.task-landed {
+  animation: task-landed 160ms ease-out;
+}
+
+@keyframes column-open {
+  from {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.column-open {
+  animation: column-open 150ms ease-out;
+}
+
+/* The task following the pointer during a drag (§6.3). */
+.drag-ghost {
+  position: fixed;
+  z-index: 60;
+  pointer-events: none;
+  background: var(--surface);
+  border: 1px solid var(--ink);
+  padding: 4px 9px;
+  max-width: 260px;
+  font-size: var(--text-base);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* While a drag is live, nothing else should select or scroll under the finger. */
+.dragging-active {
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .task-landed,
+  .column-open {
+    animation: none;
+  }
+}
+
+/* §5.4 — below ~1100px the strip scrolls horizontally rather than collapsing to tabs. */
+.column-strip {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .column-strip {
+    scroll-behavior: auto;
+  }
+}
+
+@media (max-width: 1100px) {
+  .column-strip {
+    scroll-snap-type: x proximity;
+  }
+  .column-snap {
+    scroll-snap-align: start;
+  }
+}
