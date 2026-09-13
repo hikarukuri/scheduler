@@ -30,8 +30,13 @@ export type SyncStatus = {
   signedIn: boolean;
   userId: string | null;
   email: string | null;
+  /** Which provider the session came from. Calendar import needs "google". */
+  provider: string | null;
+  /** The realtime channel only. Changes still save when this is down. */
   connection: "off" | "connecting" | "live" | "error";
   error: string | null;
+  /** Set when a write could not be pushed. This is the one that means data loss. */
+  saveError: string | null;
   lastSyncedAt: string | null;
   /** §2 — "show me when a remote change overwrote something". */
   overwrites: Overwrite[];
@@ -42,8 +47,10 @@ const OFFLINE: SyncStatus = {
   signedIn: false,
   userId: null,
   email: null,
+  provider: null,
   connection: "off",
   error: null,
+  saveError: null,
   lastSyncedAt: null,
   overwrites: [],
 };
@@ -58,8 +65,10 @@ let status: SyncStatus = {
   signedIn: false,
   userId: null,
   email: null,
+  provider: null,
   connection: "off",
   error: null,
+  saveError: null,
   lastSyncedAt: null,
   overwrites: [],
 };
@@ -124,7 +133,7 @@ let queue: Promise<void> = Promise.resolve();
 
 function enqueue(work: () => Promise<void>) {
   queue = queue.then(work).catch((error: unknown) => {
-    setStatus({ connection: "error", error: describe(error) });
+    setStatus({ saveError: describe(error) });
   });
 }
 
@@ -179,7 +188,9 @@ async function pushChanges(
     });
     if (error) throw error;
   }
-  setStatus({ lastSyncedAt: new Date().toISOString(), connection: "live", error: null });
+  // Saving is not the same fact as the realtime channel being up, and saying so
+  // is what tells you whether your work is safe.
+  setStatus({ lastSyncedAt: new Date().toISOString(), saveError: null });
 }
 
 // ── Receiving remote changes ────────────────────────────────────────────────
@@ -267,8 +278,10 @@ async function connect(client: SupabaseClient, session: Session) {
     signedIn: true,
     userId,
     email: session.user.email ?? null,
+    provider: (session.user.app_metadata?.provider as string | undefined) ?? "email",
     connection: "connecting",
     error: null,
+    saveError: null,
   });
 
   // The Google refresh token is handed over once, at sign-in. Keep it so the
@@ -377,7 +390,10 @@ async function connect(client: SupabaseClient, session: Session) {
       .subscribe((state) => {
         if (state === "SUBSCRIBED") setStatus({ connection: "live", error: null });
         else if (state === "CHANNEL_ERROR" || state === "TIMED_OUT") {
-          setStatus({ connection: "error", error: "Realtime connection lost." });
+          setStatus({
+            connection: "error",
+            error: "Live updates from your other devices are not connected.",
+          });
         }
       });
 
@@ -420,6 +436,7 @@ export function startCloud() {
         signedIn: false,
         userId: null,
         email: null,
+        provider: null,
         connection: "off",
         lastSyncedAt: null,
       });
@@ -431,9 +448,45 @@ export function startCloud() {
   });
 }
 
-export async function signIn() {
+/**
+ * Sign-in, by email and password.
+ *
+ * §2 named Google as the only provider, on the reasoning that sign-in exists to
+ * get a Google token and to keep the data private. With calendar import off,
+ * only the second half applies — and this needs nothing configured outside
+ * Supabase itself.
+ */
+export async function signInWithPassword(
+  email: string,
+  password: string,
+): Promise<string | null> {
   const client = supabase();
-  if (!client) return;
+  if (!client) return "The cloud is not configured.";
+  const { error } = await client.auth.signInWithPassword({ email, password });
+  return error ? error.message : null;
+}
+
+export async function signUpWithPassword(
+  email: string,
+  password: string,
+): Promise<string | null> {
+  const client = supabase();
+  if (!client) return "The cloud is not configured.";
+  const { data, error } = await client.auth.signUp({ email, password });
+  if (error) return error.message;
+  // With email confirmation left on, Supabase creates the user but no session.
+  if (!data.session) return "Check your email to confirm the account, then sign in.";
+  return null;
+}
+
+/**
+ * The Google path, kept because calendar import (§7) depends on it: reading a
+ * calendar needs a Google token, which needs this provider and a Google Cloud
+ * OAuth client. Unused while calendar import is off.
+ */
+export async function signInWithGoogle(): Promise<string | null> {
+  const client = supabase();
+  if (!client) return "The cloud is not configured.";
   const { error } = await client.auth.signInWithOAuth({
     provider: "google",
     options: {
@@ -443,7 +496,7 @@ export async function signIn() {
       queryParams: { access_type: "offline", prompt: "consent" },
     },
   });
-  if (error) setStatus({ error: error.message });
+  return error ? error.message : null;
 }
 
 export async function signOut() {
@@ -459,7 +512,14 @@ export async function signOut() {
     // Nothing to clear.
   }
   applyRemote(EMPTY_STATE);
-  setStatus({ signedIn: false, userId: null, email: null, connection: "off", overwrites: [] });
+  setStatus({
+    signedIn: false,
+    userId: null,
+    email: null,
+    provider: null,
+    connection: "off",
+    overwrites: [],
+  });
 }
 
 export async function accessToken(): Promise<string | null> {

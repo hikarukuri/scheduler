@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { loadCalendars, markChangesSeen, syncNow, useCalendar } from "@/lib/calendar";
 import { resetAll, updateSettings } from "@/lib/store";
-import { signIn, signOut, useSync } from "@/lib/sync";
+import { signInWithPassword, signOut, signUpWithPassword, useSync } from "@/lib/sync";
 import { usePlanner } from "@/lib/ui";
 import { DEFAULT_SETTINGS } from "@/lib/types";
 
@@ -177,9 +177,33 @@ function Keyboard() {
   );
 }
 
-/** §2 — sign-in exists to get a Google token and keep the data private. */
+/**
+ * §2 — sign-in exists to keep the data private and to carry the plan between
+ * devices, not to support more than one person. There are no roles, no
+ * invitations and nobody to share with.
+ */
 function Account() {
   const sync = useSync();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  async function submit(kind: "in" | "up") {
+    if (!email.trim() || !password) {
+      setMessage("Enter an email address and a password.");
+      return;
+    }
+    setBusy(true);
+    setMessage(null);
+    const failure =
+      kind === "in"
+        ? await signInWithPassword(email.trim(), password)
+        : await signUpWithPassword(email.trim(), password);
+    setBusy(false);
+    setMessage(failure);
+    if (!failure) setPassword("");
+  }
 
   if (!sync.configured) {
     return (
@@ -200,13 +224,13 @@ function Account() {
         <>
           <p className="mt-1 text-xs">{sync.email}</p>
           <p className="mt-[2px] text-2xs text-ink-3">
-            {sync.connection === "live"
-              ? "Syncing across your devices."
-              : sync.connection === "connecting"
-                ? "Connecting."
-                : sync.connection === "error"
-                  ? `Not syncing. ${sync.error ?? ""}`
-                  : "Offline."}
+            {sync.saveError
+              ? `Changes are not saving. ${sync.saveError}`
+              : sync.connection === "live"
+                ? "Syncing across your devices."
+                : sync.connection === "connecting"
+                  ? "Connecting."
+                  : `Changes are saving. ${sync.error ?? "Live updates are not connected."}`}
           </p>
           <button type="button" className="mt-2 text-xs underline" onClick={() => void signOut()}>
             Sign out
@@ -215,12 +239,51 @@ function Account() {
       ) : (
         <>
           <p className="mt-1 text-xs text-ink-3">
-            Signing in with Google keeps the plan on your devices, and asks for read-only access
-            to your calendar in the same step.
+            Sign in to keep this plan on your phone as well as here. The same email and password
+            on both, and nothing else to set up.
           </p>
-          <button type="button" className="mt-2 text-xs underline" onClick={() => void signIn()}>
-            Sign in with Google
-          </button>
+          <form
+            className="mt-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void submit("in");
+            }}
+          >
+            <label className="mb-2 flex items-baseline gap-3 text-xs">
+              <span className="w-[64px] shrink-0 text-2xs text-ink-3">Email</span>
+              <input
+                type="email"
+                autoComplete="username"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                className="w-[220px] border-b border-hairline pb-[2px]"
+              />
+            </label>
+            <label className="mb-2 flex items-baseline gap-3 text-xs">
+              <span className="w-[64px] shrink-0 text-2xs text-ink-3">Password</span>
+              <input
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                className="w-[220px] border-b border-hairline pb-[2px]"
+              />
+            </label>
+            <p className="flex items-baseline gap-4 text-xs">
+              <button type="submit" className="underline" disabled={busy}>
+                {busy ? "Working" : "Sign in"}
+              </button>
+              <button
+                type="button"
+                className="text-ink-3"
+                disabled={busy}
+                onClick={() => void submit("up")}
+              >
+                Create the account
+              </button>
+            </p>
+          </form>
+          {message ? <p className="mt-1 text-2xs text-ink-3">{message}</p> : null}
           {sync.error ? <p className="mt-1 text-2xs text-ink-3">{sync.error}</p> : null}
         </>
       )}
@@ -236,10 +299,27 @@ function Calendars() {
   const watched = state.settings.watchedCalendarIds;
 
   useEffect(() => {
-    if (sync.signedIn && !calendar.calendars && !calendar.loading) void loadCalendars();
-  }, [sync.signedIn, calendar.calendars, calendar.loading]);
+    if (sync.provider === "google" && !calendar.calendars && !calendar.loading) {
+      void loadCalendars();
+    }
+  }, [sync.provider, calendar.calendars, calendar.loading]);
 
   if (!sync.configured) return null;
+
+  // Reading a calendar needs a Google token, which only a Google sign-in
+  // carries. On any other sign-in the import stays off rather than pretending.
+  if (sync.provider !== "google") {
+    return (
+      <section className="mt-8 border-t border-hairline pt-4">
+        <h3 className="font-serif text-md">Calendar</h3>
+        <p className="mt-1 text-xs text-ink-3">
+          Calendar import is off. It reads all-day events from Google Calendar, which needs a
+          Google sign-in and a Google Cloud OAuth client. The README has the steps if you want it
+          later; deadlines are typed in by hand until then.
+        </p>
+      </section>
+    );
+  }
 
   return (
     <section className="mt-8 border-t border-hairline pt-4">
@@ -249,9 +329,7 @@ function Calendars() {
         imported, and the app never writes to your calendar.
       </p>
 
-      {!sync.signedIn ? (
-        <p className="mt-2 text-xs text-ink-3">Sign in to choose calendars.</p>
-      ) : calendar.loading ? (
+      {calendar.loading ? (
         <p className="mt-2 text-xs text-ink-3">Reading your calendars.</p>
       ) : calendar.calendars && calendar.calendars.length > 0 ? (
         <ul className="mt-2">
@@ -282,18 +360,16 @@ function Calendars() {
         <p className="mt-2 text-xs text-ink-3">No calendars available.</p>
       )}
 
-      {sync.signedIn ? (
-        <p className="mt-2 flex items-baseline gap-4 text-xs">
-          <button type="button" className="underline" onClick={() => void syncNow()}>
-            {calendar.syncing ? "Syncing" : "Sync now"}
-          </button>
-          {calendar.lastSyncAt ? (
-            <span className="text-2xs text-ink-3">
-              last synced {calendar.lastSyncAt.slice(11, 16)}
-            </span>
-          ) : null}
-        </p>
-      ) : null}
+      <p className="mt-2 flex items-baseline gap-4 text-xs">
+        <button type="button" className="underline" onClick={() => void syncNow()}>
+          {calendar.syncing ? "Syncing" : "Sync now"}
+        </button>
+        {calendar.lastSyncAt ? (
+          <span className="text-2xs text-ink-3">
+            last synced {calendar.lastSyncAt.slice(11, 16)}
+          </span>
+        ) : null}
+      </p>
 
       {calendar.error ? <p className="mt-1 text-2xs text-ink-3">{calendar.error}</p> : null}
 

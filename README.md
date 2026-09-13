@@ -102,35 +102,56 @@ JP) so a title mixing Latin and Japanese renders without a step in weight or siz
 Motion is limited to two things, both brief: a task landing after a move, and a column
 expanding. Both are disabled under `prefers-reduced-motion`.
 
-## Setting up the cloud
+## Turning on sync
 
-Phases 2 and 3 are optional at runtime: configure them and the app syncs and reads
-your calendar; leave them unset and it stays local. Copy `.env.example` to
-`.env.local` and fill it in.
+Sync is optional at runtime: configure it and the plan follows you between devices;
+leave it unset and everything stays in this browser. There is no Google Cloud project
+involved.
 
-**1. Supabase.** Create a project, then run `supabase/migrations/0001_init.sql` in the
-SQL editor. It creates the tables, the row-level security policies, and the realtime
-publication. It is idempotent, so re-running it is safe.
+**1. Supabase.** Create a project. In the SQL editor, run
+`supabase/migrations/0001_init.sql` — it creates the tables, the row-level security
+policies and the realtime publication, and is idempotent, so re-running it is safe.
 
-**2. Google sign-in.** In Google Cloud, create an OAuth client (Web application) and
-enable the Google Calendar API. Add Supabase's callback
-(`https://<project>.supabase.co/auth/v1/callback`) as an authorised redirect URI. Put
-the client id and secret into Supabase → Authentication → Providers → Google, and the
-same pair into `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` — the server needs them to
-exchange the stored refresh token, which Supabase does not refresh for you.
+**2. Email sign-in.** Authentication → Providers → Email is on by default. Turn
+**off** "Confirm email" so creating the account signs you straight in; leave it on and
+you will need to click a link in an email first.
 
-**3. Deploy.** Vercel builds your default branch. Set the same variables in the
-project settings. `NEXT_PUBLIC_SITE_URL` must be the public HTTPS origin, because
-that is where Google sends calendar push notifications; they cannot reach localhost,
-so in local development the 15-minute poll does the work instead.
+**3. Environment.** Copy `.env.example` to `.env.local` and fill in
+`NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` from Settings → API.
+Set the same two in your Vercel project. Nothing else is required.
 
-The first sign-in merges whatever is already in this browser into the cloud, so a plan
-built in Phase 1 is not lost.
+**4. Create the account** in Settings → Account, on whichever device already holds
+your plan. The first sign-in merges what is in that browser into the cloud, so a plan
+built before sync existed is not lost. Then sign in with the same email and password
+on your phone.
+
+## Turning on calendar import (optional)
+
+Calendar import is off, and everything it needs is in the repo waiting. It reads
+all-day events from Google Calendar, which needs a Google token, which needs a Google
+sign-in — so switching it on means adding Google as a provider:
+
+1. Google Cloud: create a project, enable the **Google Calendar API**, create an OAuth
+   client (Web application) with `https://<project-ref>.supabase.co/auth/v1/callback`
+   as an authorised redirect URI, and add the `calendar.readonly` scope.
+2. Put the client id and secret into Supabase → Authentication → Providers → Google,
+   and the same pair into `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` — the server
+   needs them to exchange the stored refresh token, which Supabase does not refresh
+   for you.
+3. Set the consent screen's publishing status to **In production**, or user type to
+   **Internal** if you are on Google Workspace. Left in "Testing", Google expires the
+   refresh token after seven days and imports stop until you sign in again.
+4. Set `NEXT_PUBLIC_SITE_URL` to your public HTTPS origin — that is where Google sends
+   push notifications. They cannot reach localhost, so in local development the
+   15-minute poll does the work instead.
+
+Then sign in with Google and the calendar section appears in settings. Until then it
+says so plainly rather than offering something that cannot work.
 
 ## What the cloud does, and does not
 
-Sign-in exists to get a Google token and to keep the data private — there is no user
-management, no sharing, no roles. Row-level security means a row is reachable only by
+Sign-in exists to keep the data private and to carry the plan between devices — there
+is no user management, no sharing, no roles, and nobody to invite. Row-level security means a row is reachable only by
 the account that owns it, and the placement rules from §3 are enforced again as
 database constraints, so a bad write is rejected rather than stored.
 
@@ -154,13 +175,29 @@ disappears the change is applied *and* reported.
 - **Phase 2 — complete.** Supabase schema with row-level security, Google sign-in,
   merge-on-first-sign-in of local data, Realtime sync, last-write-wins with the
   overwrite reported.
-- **Phase 3 — complete.** Google Calendar read-only, the all-day import rule, push
-  notification channels renewed before they expire, a 15-minute polling fallback, and
-  calendar selection in settings.
+- **Phase 3 — built, off by default.** Google Calendar read-only, the all-day import
+  rule, push notification channels renewed before they expire, a 15-minute polling
+  fallback, and calendar selection in settings. It activates on a Google sign-in; see
+  above.
 - **Phase 4 — complete.** Keyboard coverage, pointer drag that also works by touch
   with edge auto-scrolling, narrow-screen column scrolling, the carry-count marker,
   empty states, and grouped indexes so a year of tasks does not rescan the list for
   every block.
+
+## Where this departs from the spec
+
+Three deliberate changes, each agreed rather than assumed:
+
+- **§2 named Google as the only auth provider.** Sign-in is email and password
+  instead. The reasoning in §2 was that sign-in exists to get a Google token and to
+  keep the data private; with calendar import off, only the second half applies, and
+  this needs nothing configured outside Supabase. The Google path is still in the code
+  and is what calendar import switches on.
+- **§7's calendar import is off by default**, since it is the only thing that needs a
+  Google Cloud project.
+- **A fifth pane**, for one day, drilled from the Days column — §12 had settled
+  against a fifth column for a single *task*, which is still absent; task detail
+  expands in place.
 
 ## Two columns that are not in §3
 

@@ -34,13 +34,13 @@ export function Planner() {
   const narrow = useNarrow();
   const sync = useSync();
   const calendar = useCalendar();
-  // §7 — push notifications reach the server; the poll is the fallback. Both
-  // only run while signed in.
+  // §7 — push notifications reach the server; the poll is the fallback. Neither
+  // runs without a Google session, which is what carries the calendar token.
   useEffect(() => {
-    if (!sync.signedIn || !sync.userId) return;
+    if (sync.provider !== "google" || !sync.userId) return;
     startCalendarWatch(sync.userId);
     return () => stopCalendarWatch();
-  }, [sync.signedIn, sync.userId]);
+  }, [sync.provider, sync.userId]);
 
   // The day-close offer depends on the wall clock, so re-check it now and then.
   const [, tick] = useState(0);
