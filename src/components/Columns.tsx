@@ -8,7 +8,9 @@ import {
   monthLabel,
   shortMonth,
   shortWeekday,
+  startOfWeek,
   today,
+  weekOwnerMonth,
   weekRangeLabel,
   weeksOfMonth,
   weeksUntil,
@@ -38,6 +40,8 @@ export function Columns() {
   const dayRef = useRef<HTMLDivElement>(null);
 
   const now = today();
+  const thisWeek = startOfWeek(now);
+  const thisMonth = weekOwnerMonth(thisWeek);
   const tasks = plannedTasks(state, ui.lensDeadlineId);
   const index = useMemo(() => buildIndex(tasks), [tasks]);
   const load = useMemo(() => loadByDay(state.tasks), [state.tasks]);
@@ -50,13 +54,37 @@ export function Columns() {
 
   // §5.4 — expanding a column scrolls it into view, leaving its parent partly
   // visible at the left edge. Only below the breakpoint, where they don't fit.
-  useScrollIntoViewWhenNarrow(weeksRef, ui.selectedMonth);
-  useScrollIntoViewWhenNarrow(daysRef, ui.selectedWeek);
-  useScrollIntoViewWhenNarrow(dayRef, ui.selectedDay);
+  // When every level changes at once — opening on today, or pressing Today —
+  // the right landing is the Days column with the Day pane peeking, not the
+  // deepest pane alone.
+  const previous = useRef({ month: ui.selectedMonth, week: ui.selectedWeek, day: ui.selectedDay });
+  useEffect(() => {
+    const before = previous.current;
+    previous.current = { month: ui.selectedMonth, week: ui.selectedWeek, day: ui.selectedDay };
+    if (window.matchMedia("(min-width: 1101px)").matches) return;
+    const monthChanged = ui.selectedMonth !== before.month && ui.selectedMonth;
+    const weekChanged = ui.selectedWeek !== before.week && ui.selectedWeek;
+    const dayChanged = ui.selectedDay !== before.day && ui.selectedDay;
+    if (monthChanged && weekChanged && dayChanged) {
+      daysRef.current?.scrollIntoView({ inline: "start", block: "nearest" });
+    } else if (dayChanged) {
+      dayRef.current?.scrollIntoView({ inline: "end", block: "nearest" });
+    } else if (weekChanged) {
+      daysRef.current?.scrollIntoView({ inline: "end", block: "nearest" });
+    } else if (monthChanged) {
+      weeksRef.current?.scrollIntoView({ inline: "end", block: "nearest" });
+    }
+  }, [ui.selectedMonth, ui.selectedWeek, ui.selectedDay]);
 
   return (
     <div className="column-strip flex flex-1 overflow-x-auto">
       <Column title="Months" width="w-[76vw] wide:w-[244px]">
+        {deadlines.length === 0 && state.tasks.length === 0 ? (
+          <p className="px-3 pt-3 text-xs text-ink-3">
+            Start with a deadline: add one on the left. Then press n to capture the work
+            toward it, and drag each task into a month.
+          </p>
+        ) : null}
         {months.map((month, position) => (
           <Block
             key={month}
@@ -64,6 +92,7 @@ export function Columns() {
             date={month}
             expandable
             label={monthLabel(month)}
+            marker={month === thisMonth ? "this month" : undefined}
             sublabel={
               lens && lens.date >= month
                 ? `${weeksUntil(month, lens.date)} weeks to ${lens.title}`
@@ -104,6 +133,7 @@ export function Columns() {
                 date={week}
                 expandable
                 label={weekRangeLabel(week)}
+                marker={week === thisWeek ? "this week" : undefined}
                 tasks={tasksAt(index.atWeek, week)}
                 belowCount={index.belowWeek.get(week) ?? 0}
                 deadlines={deadlinesInWeek(deadlines, week)}
@@ -178,17 +208,6 @@ export function Columns() {
       </Column>
     </div>
   );
-}
-
-function useScrollIntoViewWhenNarrow(
-  ref: React.RefObject<HTMLDivElement | null>,
-  trigger: string | null,
-) {
-  useEffect(() => {
-    if (!trigger || !ref.current) return;
-    if (window.matchMedia("(min-width: 1101px)").matches) return;
-    ref.current.scrollIntoView({ inline: "end", block: "nearest" });
-  }, [ref, trigger]);
 }
 
 function Empty({ children }: { children: React.ReactNode }) {

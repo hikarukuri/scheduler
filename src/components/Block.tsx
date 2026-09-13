@@ -32,6 +32,7 @@ export function Block({
   muted = false,
   emptyText,
   showEmptyText = true,
+  marker,
   children,
 }: {
   level: BlockLevel;
@@ -51,10 +52,12 @@ export function Block({
   emptyText: string;
   /** The empty line is shown where it helps, not repeated down the whole column. */
   showEmptyText?: boolean;
+  /** A quiet orientation word beside the label: "this month", "this week". */
+  marker?: string;
   children?: React.ReactNode;
 }) {
   const drag = useDrag();
-  const { ui, notify } = useUi();
+  const { ui, set, notify } = useUi();
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState("");
   const over = drag.overKey === dropKey(level, date);
@@ -62,20 +65,20 @@ export function Block({
   // ones not yet taken further.
   const hasFinerLevels = level !== "day";
 
-  function submit() {
+  /** Adds the draft. Returns whether there was anything to add. */
+  function submit(): boolean {
     const title = draft.trim();
-    if (title) {
-      // A new task inherits the lens, so planning backwards from a selected
-      // deadline does not mean retyping which deadline it is for (§6.1).
-      const result = addTask({
-        title,
-        deadline_id: ui.lensDeadlineId,
-        placement: { level, date },
-      });
-      if (!result.ok) notify(`${result.reason} Nothing was added.`, true);
-    }
+    if (!title) return false;
+    // A new task inherits the lens, so planning backwards from a selected
+    // deadline does not mean retyping which deadline it is for (§6.1).
+    const result = addTask({
+      title,
+      deadline_id: ui.lensDeadlineId,
+      placement: { level, date },
+    });
+    if (!result.ok) notify(`${result.reason} Nothing was added.`, true);
     setDraft("");
-    setAdding(false);
+    return true;
   }
 
   return (
@@ -100,27 +103,52 @@ export function Block({
           {label}
         </h3>
         {belowCount ? (
-          <span className="numeral shrink-0 text-2xs text-ink-3">{belowCount} below</span>
+          <span className="numeral shrink-0 text-2xs text-ink-3">
+            {belowCount} in {level === "month" ? "weeks" : "days"}
+          </span>
         ) : null}
       </header>
 
-      {sublabel ? <p className="mt-[1px] text-2xs text-ink-3">{sublabel}</p> : null}
+      {marker || sublabel ? (
+        <p className="mt-[1px] flex gap-3 text-2xs text-ink-3">
+          {marker ? <span>{marker}</span> : null}
+          {sublabel ? <span>{sublabel}</span> : null}
+        </p>
+      ) : null}
 
       {deadlines.length > 0 ? (
         <ul className="mt-1">
           {deadlines.map((d) => (
-            <li key={d.id} className="flex items-baseline justify-between gap-2">
-              <span className="truncate font-serif text-sm">{d.title}</span>
-              <span
-                className="numeral shrink-0 text-2xs"
-                style={
-                  isNear(d.date, today())
-                    ? { color: "var(--accent)" }
-                    : { color: "var(--ink-3)" }
-                }
+            <li key={d.id}>
+              {/* A marker is also the quickest way into that deadline's lens. */}
+              <button
+                type="button"
+                title={ui.lensDeadlineId === d.id ? "Show everything" : `Show only ${d.title}`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  set({ lensDeadlineId: ui.lensDeadlineId === d.id ? null : d.id });
+                }}
+                className="flex w-full items-baseline justify-between gap-2 text-left"
               >
-                {countdownLabel(d.date)}
-              </span>
+                <span
+                  className={[
+                    "truncate font-serif text-sm",
+                    ui.lensDeadlineId === d.id ? "underline" : "",
+                  ].join(" ")}
+                >
+                  {d.title}
+                </span>
+                <span
+                  className="numeral shrink-0 text-2xs"
+                  style={
+                    isNear(d.date, today())
+                      ? { color: "var(--accent)" }
+                      : { color: "var(--ink-3)" }
+                  }
+                >
+                  {countdownLabel(d.date)}
+                </span>
+              </button>
             </li>
           ))}
         </ul>
@@ -158,9 +186,14 @@ export function Block({
           placeholder="Task"
           onClick={(event) => event.stopPropagation()}
           onChange={(event) => setDraft(event.target.value)}
-          onBlur={submit}
+          onBlur={() => {
+            submit();
+            setAdding(false);
+          }}
           onKeyDown={(event) => {
-            if (event.key === "Enter") submit();
+            // Enter adds and stays open, so several tasks go in one after another;
+            // an empty Enter, or Escape, closes it.
+            if (event.key === "Enter" && !submit()) setAdding(false);
             if (event.key === "Escape") {
               setDraft("");
               setAdding(false);

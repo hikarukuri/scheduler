@@ -4,8 +4,24 @@ import { countdownLabel, isNear, today } from "@/lib/dates";
 import { placementText } from "@/lib/placement";
 import { activeDeadlines, byCreation } from "@/lib/select";
 import { useUi, usePlanner } from "@/lib/ui";
-import type { Task } from "@/lib/types";
+import type { Milestone, Task } from "@/lib/types";
 import { TaskRow } from "./TaskRow";
+
+/** Tasks under a deadline, split by milestone in milestone order; unassigned last. */
+function byMilestone(
+  tasks: Task[],
+  milestones: Milestone[],
+): { key: string; title: string | null; tasks: Task[] }[] {
+  const groups: { key: string; title: string | null; tasks: Task[] }[] = milestones
+    .filter((m) => !m.archived_at)
+    .sort((a, b) => a.order - b.order)
+    .map((m) => ({ key: m.id, title: m.title, tasks: tasks.filter((t) => t.milestone_id === m.id) }))
+    .filter((g) => g.tasks.length > 0);
+  const assigned = new Set(groups.flatMap((g) => g.tasks.map((t) => t.id)));
+  const rest = tasks.filter((t) => !assigned.has(t.id));
+  if (rest.length > 0) groups.push({ key: "rest", title: groups.length > 0 ? "No milestone" : null, tasks: rest });
+  return groups;
+}
 
 const LEVELS = [
   { key: "all", label: "Any placement" },
@@ -137,19 +153,29 @@ export function ListView() {
                   </span>
                 ) : null}
               </header>
-              {group.tasks.map((task) => (
-                <div key={task.id} className="flex items-baseline gap-3">
-                  <div className="min-w-0 flex-1">
-                    <TaskRow
-                      task={task}
-                      deadlines={deadlines}
-                      milestones={state.milestones}
-                      showSize={state.settings.showSize}
-                    />
-                  </div>
-                  <span className="shrink-0 pt-[3px] text-2xs text-ink-3">
-                    {placementText(task)}
-                  </span>
+              {byMilestone(
+                group.tasks,
+                state.milestones.filter((m) => m.deadline_id === group.key),
+              ).map((sub) => (
+                <div key={sub.key}>
+                  {sub.title ? (
+                    <p className="mb-[2px] mt-2 text-2xs text-ink-3">{sub.title}</p>
+                  ) : null}
+                  {sub.tasks.map((task) => (
+                    <div key={task.id} className="flex items-baseline gap-3">
+                      <div className="min-w-0 flex-1">
+                        <TaskRow
+                          task={task}
+                          deadlines={deadlines}
+                          milestones={state.milestones}
+                          showSize={state.settings.showSize}
+                        />
+                      </div>
+                      <span className="shrink-0 pt-[3px] text-2xs text-ink-3">
+                        {placementText(task)}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               ))}
             </section>

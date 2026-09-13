@@ -156,6 +156,11 @@ textarea::placeholder {
   animation: column-open 150ms ease-out;
 }
 
+/* A row shows it can be picked up. A static tint: §8.4 permits no hover transitions. */
+.task-row:hover {
+  background: var(--selected);
+}
+
 /* The task following the pointer during a drag (§6.3). */
 .drag-ghost {
   position: fixed;

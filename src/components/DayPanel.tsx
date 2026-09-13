@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   countdownLabel,
   dayOfMonth,
@@ -11,6 +12,7 @@ import {
 } from "@/lib/dates";
 import { dropKey, dropProps, useDrag } from "@/lib/drag";
 import { CARRY_LIMIT, deadlinesOnDay, tasksAt, type TaskIndex } from "@/lib/select";
+import { addTask } from "@/lib/store";
 import { useUi, usePlanner } from "@/lib/ui";
 import type { Deadline, ISODate } from "@/lib/types";
 import { TaskRow } from "./TaskRow";
@@ -33,8 +35,9 @@ export function DayPanel({
   deadlines: Deadline[];
 }) {
   const state = usePlanner();
-  const { ui, set } = useUi();
+  const { ui, set, notify } = useUi();
   const drag = useDrag();
+  const [draft, setDraft] = useState("");
   const day = ui.selectedDay;
   const now = today();
 
@@ -52,6 +55,22 @@ export function DayPanel({
   const full = count >= state.settings.dayCap;
   const over = drag.overKey === dropKey("day", day);
   const carried = tasks.filter((t) => t.carry_count >= CARRY_LIMIT);
+  // §6.6 keeps finished tasks out of the columns; a count is not a task.
+  const doneToday = state.tasks.filter(
+    (t) => t.status === "done" && t.placement_level === "day" && t.placement_day === day,
+  ).length;
+
+  function add() {
+    const title = draft.trim();
+    if (!title) return;
+    const result = addTask({
+      title,
+      deadline_id: ui.lensDeadlineId,
+      placement: { level: "day", date: day! },
+    });
+    if (!result.ok) notify(`${result.reason} Nothing was added.`, true);
+    else setDraft("");
+  }
 
   return (
     <div
@@ -73,9 +92,12 @@ export function DayPanel({
         {day === now ? <span className="text-2xs text-ink-3">today</span> : null}
       </header>
 
-      <p className="numeral mt-[1px] text-2xs text-ink-3">
-        {count} of {state.settings.dayCap}
-        {full ? " — full" : ""}
+      <p className="numeral mt-[1px] flex gap-3 text-2xs text-ink-3">
+        <span>
+          {count} of {state.settings.dayCap}
+          {full ? ", full" : ""}
+        </span>
+        {doneToday > 0 ? <span>{doneToday} done</span> : null}
       </p>
 
       {due.length > 0 ? (
@@ -100,8 +122,8 @@ export function DayPanel({
 
       <div className="mt-2 border-t border-hairline pt-2">
         {tasks.length === 0 ? (
-          <p className="text-xs text-ink-3">
-            Nothing on this day. Drag a task here, or add one from the day in the column.
+          <p className="mb-1 text-xs text-ink-3">
+            Nothing on this day yet. Type one below, or drag one in.
           </p>
         ) : (
           tasks.map((task) => (
@@ -116,6 +138,19 @@ export function DayPanel({
           ))
         )}
       </div>
+
+      <input
+        aria-label="Add a task to this day"
+        value={draft}
+        placeholder={full ? "This day is full" : "Add a task to this day"}
+        disabled={full}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") add();
+          if (event.key === "Escape") setDraft("");
+        }}
+        className="mt-2 w-full border-b border-hairline pb-[2px] text-base disabled:text-ink-3"
+      />
 
       {carried.length > 0 ? (
         <p className="mt-3 border-t border-hairline pt-2 text-2xs text-ink-3">

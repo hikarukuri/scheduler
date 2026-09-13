@@ -150,6 +150,13 @@ function changedRows<T extends Row>(prev: T[], next: T[]): T[] {
   return next.filter((row) => before.get(row.id) !== row);
 }
 
+/** Rows that were here and are not any more — a permanent delete. */
+function removedIds<T extends Row>(prev: T[], next: T[]): string[] {
+  if (prev === next) return [];
+  const kept = new Set(next.map((row) => row.id));
+  return prev.filter((row) => !kept.has(row.id)).map((row) => row.id);
+}
+
 async function pushChanges(
   client: SupabaseClient,
   userId: string,
@@ -160,6 +167,20 @@ async function pushChanges(
   const deadlines = changedRows(prev.deadlines, next.deadlines);
   const milestones = changedRows(prev.milestones, next.milestones);
   const tasks = changedRows(prev.tasks, next.tasks);
+
+  // Deletes first, and tasks before the deadline they pointed at: the task
+  // update that clears deadline_id is in `tasks` below, and a delete that
+  // cascades on the server would otherwise take milestones and re-point tasks
+  // in a way the client has already done by hand.
+  for (const [table, ids] of [
+    ["tasks", removedIds(prev.tasks, next.tasks)],
+    ["milestones", removedIds(prev.milestones, next.milestones)],
+    ["deadlines", removedIds(prev.deadlines, next.deadlines)],
+  ] as const) {
+    if (ids.length === 0) continue;
+    const { error } = await client.from(table).delete().in("id", ids).eq("user_id", userId);
+    if (error) throw error;
+  }
 
   if (deadlines.length) {
     const { error } = await client

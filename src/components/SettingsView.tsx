@@ -153,6 +153,7 @@ export function SettingsView() {
 
 const SHORTCUTS: [string, string][] = [
   ["n", "Quick add"],
+  ["t", "Go to today"],
   ["b", "Show or hide the backlog"],
   ["→", "Promote the selected task into the selected block of the next column"],
   ["←", "Demote the selected task one level"],

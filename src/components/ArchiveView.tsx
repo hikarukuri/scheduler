@@ -1,8 +1,36 @@
 "use client";
 
-import { reopenTask, restoreDeadline } from "@/lib/store";
+import { useState } from "react";
+import { deleteDeadline, deleteTask, reopenTask, restoreDeadline } from "@/lib/store";
 import { usePlanner } from "@/lib/ui";
 import type { Task } from "@/lib/types";
+
+/** "Delete" that asks once, inline, and never as a modal. */
+function DeleteForGood({ what, onDelete }: { what: string; onDelete: () => void }) {
+  const [asking, setAsking] = useState(false);
+  if (!asking) {
+    return (
+      <button
+        type="button"
+        className="shrink-0 text-2xs text-ink-3 underline"
+        onClick={() => setAsking(true)}
+      >
+        Delete
+      </button>
+    );
+  }
+  return (
+    <span className="flex shrink-0 items-baseline gap-2 text-2xs">
+      <span className="text-ink-3">Delete {what} for good?</span>
+      <button type="button" className="underline" onClick={onDelete}>
+        Delete
+      </button>
+      <button type="button" className="text-ink-3" onClick={() => setAsking(false)}>
+        Keep
+      </button>
+    </span>
+  );
+}
 
 function completedFirst(a: Task, b: Task): number {
   const x = a.completed_at ?? "";
@@ -48,7 +76,8 @@ export function ArchiveView() {
 
         {groups.length === 0 ? (
           <p className="text-xs text-ink-3">
-            Nothing finished yet. Completed and dropped tasks collect here.
+            Nothing finished yet. Tasks you mark done or drop collect here, grouped by deadline,
+            with the day they were finished.
           </p>
         ) : (
           groups.map((group) => (
@@ -80,6 +109,7 @@ export function ArchiveView() {
                     >
                       Reopen
                     </button>
+                    <DeleteForGood what="this task" onDelete={() => deleteTask(task.id)} />
                   </li>
                 ))}
               </ul>
@@ -104,6 +134,10 @@ export function ArchiveView() {
                   >
                     Restore
                   </button>
+                  <DeleteForGood
+                    what="this deadline"
+                    onDelete={() => deleteDeadline(deadline.id)}
+                  />
                 </li>
               ))}
             </ul>

@@ -9,7 +9,7 @@ import type { Placement } from "@/lib/placement";
 import { atDay, plannedTasks, taskById } from "@/lib/select";
 import { dismissOverwrite, startCloud, useSync } from "@/lib/sync";
 import { dayCloseDismiss, demoteTask, isLoaded, load, placeTask, setDone, subscribe } from "@/lib/store";
-import { useUi, usePlanner } from "@/lib/ui";
+import { todaySelection, useUi, usePlanner } from "@/lib/ui";
 import { ArchiveView } from "./ArchiveView";
 import { BacklogPanel } from "./BacklogPanel";
 import { Columns } from "./Columns";
@@ -34,6 +34,12 @@ export function Planner() {
   const narrow = useNarrow();
   const sync = useSync();
   const calendar = useCalendar();
+
+  // The app opens on today — drilled into this month, this week, this day — so
+  // the morning view is one glance, not three clicks.
+  useEffect(() => {
+    if (ready) set(todaySelection());
+  }, [ready, set]);
   // §7 — push notifications reach the server; the poll is the fallback. Neither
   // runs without a Google session, which is what carries the calendar token.
   useEffect(() => {
@@ -132,6 +138,11 @@ export function Planner() {
       if (event.key === "b") {
         event.preventDefault();
         set({ backlogOpen: !ui.backlogOpen });
+        return;
+      }
+      if (event.key === "t") {
+        event.preventDefault();
+        set({ view: "columns", ...todaySelection() });
         return;
       }
       if (!ui.selectedTaskId) return;
@@ -246,6 +257,18 @@ export function Planner() {
         {ui.notice ? (
           <div className="flex items-baseline gap-4 border-b border-hairline px-4 py-2 text-xs">
             <span>{ui.notice.text}</span>
+            {ui.notice.undo ? (
+              <button
+                type="button"
+                className="underline"
+                onClick={() => {
+                  ui.notice?.undo?.();
+                  set({ notice: null });
+                }}
+              >
+                Undo
+              </button>
+            ) : null}
             {ui.notice.settingsLink ? (
               <button
                 type="button"
@@ -358,6 +381,13 @@ function TopBar({
       <button
         type="button"
         className="whitespace-nowrap text-xs text-ink-3"
+        onClick={() => set({ view: "columns", ...todaySelection() })}
+      >
+        Today
+      </button>
+      <button
+        type="button"
+        className="whitespace-nowrap text-xs text-ink-3"
         onClick={onDayClose}
       >
         Close the day
@@ -365,10 +395,11 @@ function TopBar({
       <button
         type="button"
         aria-label="Quick add"
-        className="whitespace-nowrap text-xs underline"
+        className="flex items-baseline gap-[6px] whitespace-nowrap text-xs"
         onClick={() => set({ quickAddOpen: true })}
       >
-        Add
+        <span className="underline">Add</span>
+        <kbd className="numeral text-2xs text-ink-3">n</kbd>
       </button>
     </header>
   );

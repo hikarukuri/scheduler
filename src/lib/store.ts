@@ -356,6 +356,35 @@ export function reopenTask(taskId: string) {
   patchTask(taskId, { status: "open", completed_at: null });
 }
 
+/**
+ * Gone for good. Only ever behind an explicit confirmation — the ordinary way
+ * to be rid of a task is to drop it, which keeps it in the archive.
+ */
+export function deleteTask(taskId: string) {
+  commit({ ...state, tasks: state.tasks.filter((t) => t.id !== taskId) });
+}
+
+/** Removes the deadline and its milestones; its tasks survive, without a deadline. */
+export function deleteDeadline(deadlineId: string) {
+  const milestoneIds = new Set(
+    state.milestones.filter((m) => m.deadline_id === deadlineId).map((m) => m.id),
+  );
+  commit({
+    ...state,
+    deadlines: state.deadlines.filter((d) => d.id !== deadlineId),
+    milestones: state.milestones.filter((m) => m.deadline_id !== deadlineId),
+    tasks: state.tasks.map((t) =>
+      t.deadline_id === deadlineId || (t.milestone_id && milestoneIds.has(t.milestone_id))
+        ? {
+            ...t,
+            deadline_id: t.deadline_id === deadlineId ? null : t.deadline_id,
+            milestone_id: t.milestone_id && milestoneIds.has(t.milestone_id) ? null : t.milestone_id,
+          }
+        : t,
+    ),
+  });
+}
+
 // ── Day close (§6.2) ────────────────────────────────────────────────────────
 
 export type DayCloseChoice = "tomorrow" | "week" | "month" | "backlog" | "drop";

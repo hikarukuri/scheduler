@@ -1,9 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import { countdownLabel, isNear, today } from "@/lib/dates";
 import { useDrag } from "@/lib/drag";
 import { CARRY_LIMIT } from "@/lib/select";
-import { dropTask, setDone, updateTask } from "@/lib/store";
+import { deleteTask, dropTask, reopenTask, setDone, updateTask } from "@/lib/store";
 import { useUi } from "@/lib/ui";
 import type { Deadline, Milestone, Size, Task } from "@/lib/types";
 
@@ -13,7 +14,9 @@ const SIZES: Size[] = ["S", "M", "L"];
  * One task. The only thing that ever gets marked done (§3).
  *
  * Selecting a task expands its detail in place rather than opening a fifth
- * column, so the strip keeps its width at every breakpoint.
+ * column, so the strip keeps its width at every breakpoint. Marking done and
+ * dropping both remove the row from the columns at once (§6.6); each leaves a
+ * notice with a way back.
  */
 export function TaskRow({
   task,
@@ -28,21 +31,37 @@ export function TaskRow({
   showSize: boolean;
   showDeadline?: boolean;
 }) {
-  const { ui, set } = useUi();
+  const { ui, set, notifyUndo } = useUi();
   const drag = useDrag();
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const expanded = ui.selectedTaskId === task.id;
   const dragging = drag.draggingId === task.id;
   const justMoved = ui.lastMoved === task.id;
   const deadline = deadlines.find((d) => d.id === task.deadline_id) ?? null;
+  const milestone = milestones.find((m) => m.id === task.milestone_id) ?? null;
   const carried = task.carry_count >= CARRY_LIMIT;
   const ownMilestones = milestones.filter(
     (m) => !m.archived_at && m.deadline_id === task.deadline_id,
   );
 
+  function toggleDone() {
+    const done = task.status !== "done";
+    setDone(task.id, done);
+    if (done) {
+      notifyUndo(`“${task.title}” marked done.`, () => setDone(task.id, false));
+    }
+  }
+
+  function drop() {
+    dropTask(task.id);
+    set({ selectedTaskId: null });
+    notifyUndo(`“${task.title}” dropped. It is in the archive.`, () => reopenTask(task.id));
+  }
+
   return (
     <div
       className={[
-        "border-l-2 pl-2 -ml-2",
+        "task-row border-l-2 pl-2 -ml-2",
         expanded ? "border-ink bg-selected" : "border-transparent",
         dragging ? "opacity-30" : "",
         justMoved ? "task-landed" : "",
@@ -64,16 +83,23 @@ export function TaskRow({
           onPointerDown={(event) => event.stopPropagation()}
           onClick={(event) => {
             event.stopPropagation();
-            setDone(task.id, task.status !== "done");
+            toggleDone();
           }}
-          className={[
-            "mt-[3px] h-[11px] w-[11px] shrink-0 border",
-            task.status === "done" ? "border-ink bg-ink" : "border-ink-3",
-          ].join(" ")}
-        />
+          // A 24px target around an 11px mark: the mark stays quiet, the tap does not miss.
+          className="-my-1 -ml-[6px] flex h-6 w-6 shrink-0 items-center justify-center self-center"
+        >
+          <span
+            className={[
+              "block h-[11px] w-[11px] border",
+              task.status === "done" ? "border-ink bg-ink" : "border-ink-3",
+            ].join(" ")}
+          />
+        </button>
         <span className="min-w-0 flex-1 text-base">{task.title}</span>
         {showDeadline && deadline ? (
-          <span className="shrink-0 text-2xs text-ink-3">{deadline.title}</span>
+          <span className="max-w-[40%] shrink-0 truncate text-2xs text-ink-3">
+            {deadline.title}
+          </span>
         ) : null}
         {carried ? (
           <span className="shrink-0 text-2xs text-ink-3">carried {task.carry_count}</span>
@@ -88,6 +114,26 @@ export function TaskRow({
           className="pb-2 pl-[19px] pr-1 text-xs text-ink-2"
           onClick={(event) => event.stopPropagation()}
         >
+          <Field label="Title">
+            <input
+              aria-label="Title"
+              defaultValue={task.title}
+              onBlur={(event) => {
+                const title = event.target.value.trim();
+                if (title && title !== task.title) updateTask(task.id, { title });
+                else event.target.value = task.title;
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") event.currentTarget.blur();
+                if (event.key === "Escape") {
+                  event.currentTarget.value = task.title;
+                  event.currentTarget.blur();
+                }
+              }}
+              className="w-full border-b border-hairline pb-[1px] text-base text-ink"
+            />
+          </Field>
+
           <Field label="Deadline">
             <select
               aria-label="Deadline"
@@ -132,11 +178,13 @@ export function TaskRow({
                 ))}
               </select>
             </Field>
+          ) : milestone ? (
+            <Field label="Milestone">{milestone.title}</Field>
           ) : null}
 
           {showSize ? (
             <Field label="Size">
-              <span className="flex gap-2">
+              <span className="flex gap-3">
                 {SIZES.map((s) => (
                   <button
                     key={s}
@@ -176,16 +224,47 @@ export function TaskRow({
             />
           </Field>
 
-          <div className="mt-1 flex gap-3 text-xs">
+          <div className="mt-1 flex items-baseline gap-4 text-xs">
+            <button type="button" className="text-ink-3 underline" onClick={drop}>
+              Drop
+            </button>
+            {confirmingDelete ? (
+              <span className="flex items-baseline gap-3">
+                <span className="text-ink-3">Delete for good?</span>
+                <button
+                  type="button"
+                  className="underline"
+                  onClick={() => {
+                    deleteTask(task.id);
+                    set({ selectedTaskId: null });
+                  }}
+                >
+                  Delete
+                </button>
+                <button
+                  type="button"
+                  className="text-ink-3"
+                  onClick={() => setConfirmingDelete(false)}
+                >
+                  Keep
+                </button>
+              </span>
+            ) : (
+              <button
+                type="button"
+                className="text-ink-3 underline"
+                onClick={() => setConfirmingDelete(true)}
+              >
+                Delete
+              </button>
+            )}
+            <span className="flex-1" />
             <button
               type="button"
-              className="text-ink-3 underline"
-              onClick={() => {
-                dropTask(task.id);
-                set({ selectedTaskId: null });
-              }}
+              className="text-ink-3"
+              onClick={() => set({ selectedTaskId: null })}
             >
-              Drop this task
+              Close
             </button>
           </div>
         </div>

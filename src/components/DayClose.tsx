@@ -43,7 +43,7 @@ export function DayClose() {
           <p className="mt-[2px] text-xs text-ink-3">
             {remaining.length === 0
               ? "Nothing unfinished."
-              : `${remaining.length} unfinished. Choose where each one goes.`}
+              : `${remaining.length} unfinished. Choose where each one goes; anything you leave stays put.`}
           </p>
         </header>
 
@@ -89,10 +89,10 @@ export function DayClose() {
             className="text-ink-3"
             onClick={() => set({ dayCloseOpen: false })}
           >
-            Leave the rest
+            Not now
           </button>
           <button type="button" className="underline" onClick={finish}>
-            Finish
+            Done for today
           </button>
         </footer>
       </div>

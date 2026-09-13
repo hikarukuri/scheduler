@@ -14,10 +14,14 @@ import { useUi, usePlanner } from "@/lib/ui";
  */
 export function QuickAdd() {
   const state = usePlanner();
-  const { ui, set, notify, markMoved } = useUi();
+  const { ui, set, notify } = useUi();
   const [input, setInput] = useState("");
   const deadlines = activeDeadlines(state);
   const parsed = useMemo(() => parseQuickAdd(input, deadlines), [input, deadlines]);
+  // With a deadline selected in the rail, a new task belongs to it unless # says
+  // otherwise — the same rule as adding straight into a block.
+  const lens = deadlines.find((d) => d.id === ui.lensDeadlineId) ?? null;
+  const deadline = parsed.deadline ?? lens;
 
   function close() {
     setInput("");
@@ -28,7 +32,7 @@ export function QuickAdd() {
     if (!parsed.title.trim()) return;
     const result = addTask({
       title: parsed.title,
-      deadline_id: parsed.deadline?.id ?? null,
+      deadline_id: deadline?.id ?? null,
       size: parsed.size,
       placement: parsed.placement,
     });
@@ -46,7 +50,6 @@ export function QuickAdd() {
         selectedWeek: parsed.placement.level === "month" ? null : startOfWeek(date),
       });
     }
-    if (result.task) markMoved(result.task.id);
     close();
   }
 
@@ -80,8 +83,13 @@ export function QuickAdd() {
             {parsed.title.trim() ? parsed.title : <span className="text-ink-3">Nothing yet</span>}
           </Row>
           <Row label="Deadline">
-            {parsed.deadline ? (
-              parsed.deadline.title
+            {deadline ? (
+              <>
+                {deadline.title}
+                {!parsed.deadline ? (
+                  <span className="ml-2 text-ink-3">the one selected</span>
+                ) : null}
+              </>
             ) : (
               <span className="text-ink-3">None</span>
             )}

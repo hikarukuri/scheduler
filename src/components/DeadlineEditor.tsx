@@ -74,6 +74,9 @@ export function DeadlineEditor() {
               value={title}
               disabled={imported}
               onChange={(event) => setTitle(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") save();
+              }}
               className="w-full border-b border-hairline pb-[2px] text-base disabled:text-ink-3"
             />
           </Field>
@@ -83,6 +86,9 @@ export function DeadlineEditor() {
               value={date}
               disabled={imported}
               onChange={(event) => setDate(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") save();
+              }}
               className="border-b border-hairline pb-[2px] disabled:text-ink-3"
             />
           </Field>

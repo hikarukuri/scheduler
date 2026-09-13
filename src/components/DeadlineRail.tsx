@@ -1,8 +1,24 @@
 "use client";
 
-import { countdownLabel, isNear, today, weeksUntil } from "@/lib/dates";
+import {
+  countdownLabel,
+  dayOfMonth,
+  diffDays,
+  isNear,
+  monthName,
+  parse,
+  today,
+  weekdayName,
+  weeksUntil,
+} from "@/lib/dates";
 import { activeDeadlines } from "@/lib/select";
+import { archiveDeadline, restoreDeadline } from "@/lib/store";
 import { useUi, usePlanner } from "@/lib/ui";
+
+/** "Thursday 15 October 2026" — a date read, not parsed. */
+function longDate(iso: string): string {
+  return `${weekdayName(iso)} ${dayOfMonth(iso)} ${monthName(iso)} ${parse(iso).getUTCFullYear()}`;
+}
 
 /**
  * The deadline rail — spec §5.2. A lens over the columns, not a column.
@@ -11,7 +27,7 @@ import { useUi, usePlanner } from "@/lib/ui";
  */
 export function DeadlineRail({ onNavigate }: { onNavigate?: () => void }) {
   const state = usePlanner();
-  const { ui, set } = useUi();
+  const { ui, set, notifyUndo } = useUi();
   const deadlines = activeDeadlines(state);
   const now = today();
 
@@ -39,6 +55,7 @@ export function DeadlineRail({ onNavigate }: { onNavigate?: () => void }) {
             {deadlines.map((deadline) => {
               const selected = ui.lensDeadlineId === deadline.id;
               const near = isNear(deadline.date, now);
+              const passed = diffDays(now, deadline.date) < 0;
               return (
                 <li key={deadline.id}>
                   <button
@@ -55,9 +72,16 @@ export function DeadlineRail({ onNavigate }: { onNavigate?: () => void }) {
                       selected ? "border-ink bg-selected" : "border-transparent",
                     ].join(" ")}
                   >
-                    <span className="min-w-0 flex-1 font-serif text-sm">{deadline.title}</span>
                     <span
-                      className="numeral shrink-0 text-xs"
+                      className={[
+                        "min-w-0 flex-1 font-serif text-sm",
+                        passed ? "text-ink-3" : "",
+                      ].join(" ")}
+                    >
+                      {deadline.title}
+                    </span>
+                    <span
+                      className={["numeral shrink-0 text-xs", passed ? "text-ink-3" : ""].join(" ")}
                       style={near ? { color: "var(--accent)" } : undefined}
                     >
                       {countdownLabel(deadline.date, now)}
@@ -65,20 +89,44 @@ export function DeadlineRail({ onNavigate }: { onNavigate?: () => void }) {
                   </button>
                   {selected ? (
                     <div className="border-l-2 border-ink bg-selected px-3 pb-2 text-2xs text-ink-3">
-                      <p className="flex gap-3">
-                        <span>{deadline.date}</span>
+                      <p>{longDate(deadline.date)}</p>
+                      <p className="mt-[2px] flex gap-3">
                         <span>{deadline.kind}</span>
+                        <span>
+                          {passed
+                            ? `${-diffDays(now, deadline.date)} days ago`
+                            : `${weeksUntil(now, deadline.date)} weeks from today`}
+                        </span>
                       </p>
-                      <p className="mt-[2px]">
-                        {weeksUntil(now, deadline.date)} weeks from today
+                      {deadline.notes ? (
+                        <p className="mt-1 whitespace-pre-wrap text-ink-2">{deadline.notes}</p>
+                      ) : null}
+                      <p className="mt-1 flex gap-3">
+                        <button
+                          type="button"
+                          className="underline"
+                          onClick={() => set({ editingDeadlineId: deadline.id })}
+                        >
+                          Edit
+                        </button>
+                        {passed ? (
+                          // A deadline that has passed is usually finished with;
+                          // archiving it from here keeps the rail current.
+                          <button
+                            type="button"
+                            className="underline"
+                            onClick={() => {
+                              archiveDeadline(deadline.id);
+                              set({ lensDeadlineId: null });
+                              notifyUndo(`“${deadline.title}” archived.`, () =>
+                                restoreDeadline(deadline.id),
+                              );
+                            }}
+                          >
+                            Archive
+                          </button>
+                        ) : null}
                       </p>
-                      <button
-                        type="button"
-                        className="mt-1 underline"
-                        onClick={() => set({ editingDeadlineId: deadline.id })}
-                      >
-                        Edit
-                      </button>
                     </div>
                   ) : null}
                 </li>

@@ -38,7 +38,13 @@ one place, showing everything committed to it.
 
 Selecting a day opens it in a fifth pane, where its tasks have room to show which
 deadline each belongs to. The Days column answers *which day*; the Day pane answers
-*what is on it*.
+*what is on it*. The app opens drilled into today — this month, this week, this day —
+so the morning view is one glance, and `t` brings it back from anywhere.
+
+Selecting a task expands it in place: title, deadline, milestone, size, notes, and
+Drop or Delete. Marking done and dropping remove the row from the columns at once, as
+§6.6 requires, and each leaves a notice with Undo for a few seconds. Delete asks once,
+inline. In a block, Enter adds a task and keeps the input open for the next one.
 
 The backlog — level `none` — sits outside calendar time, as a collapsible panel in
 the bottom-right. Collapsed, it is still a drop target, so a task can be returned to
@@ -52,6 +58,7 @@ collapsing to tabs, and the rail becomes a drawer.
 | key | |
 |---|---|
 | `n` | quick add |
+| `t` | go to today |
 | `b` | show or hide the backlog |
 | `→` | promote the selected task one level, into the selected block of the next column |
 | `←` | demote the selected task one level |
