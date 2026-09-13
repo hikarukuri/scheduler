@@ -1,11 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { markChangesSeen, startCalendarWatch, stopCalendarWatch, useCalendar } from "@/lib/calendar";
 import { localHour, today } from "@/lib/dates";
 import { DragProvider, type DropSpec } from "@/lib/drag";
 import { useNarrow } from "@/lib/media";
 import type { Placement } from "@/lib/placement";
 import { atDay, plannedTasks, taskById } from "@/lib/select";
+import { dismissOverwrite, startCloud, useSync } from "@/lib/sync";
 import { dayCloseDismiss, demoteTask, isLoaded, load, placeTask, setDone, subscribe } from "@/lib/store";
 import { useUi, usePlanner } from "@/lib/ui";
 import { ArchiveView } from "./ArchiveView";
@@ -24,11 +26,22 @@ export function Planner() {
   const ready = useSyncExternalStore(subscribe, isLoaded, () => false);
   useEffect(() => {
     load();
+    startCloud();
   }, []);
 
   const state = usePlanner();
   const { ui, set, notify, markMoved } = useUi();
   const narrow = useNarrow();
+  const sync = useSync();
+  const calendar = useCalendar();
+  // §7 — push notifications reach the server; the poll is the fallback. Both
+  // only run while signed in.
+  useEffect(() => {
+    if (!sync.signedIn || !sync.userId) return;
+    startCalendarWatch(sync.userId);
+    return () => stopCalendarWatch();
+  }, [sync.signedIn, sync.userId]);
+
   // The day-close offer depends on the wall clock, so re-check it now and then.
   const [, tick] = useState(0);
   useEffect(() => {
@@ -116,7 +129,20 @@ export function Planner() {
         set({ quickAddOpen: true });
         return;
       }
+      if (event.key === "b") {
+        event.preventDefault();
+        set({ backlogOpen: !ui.backlogOpen });
+        return;
+      }
       if (!ui.selectedTaskId) return;
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        const siblings = blockSiblings(state, ui.lensDeadlineId, ui.selectedTaskId);
+        const at = siblings.findIndex((t) => t.id === ui.selectedTaskId);
+        const next = siblings[at + (event.key === "ArrowDown" ? 1 : -1)];
+        if (next) set({ selectedTaskId: next.id });
+        return;
+      }
       if (event.key === "ArrowRight") {
         event.preventDefault();
         promote();
@@ -131,7 +157,18 @@ export function Planner() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [demote, promote, set, state, ui.dayCloseOpen, ui.editingDeadlineId, ui.quickAddOpen, ui.selectedTaskId]);
+  }, [
+    demote,
+    promote,
+    set,
+    state,
+    ui.backlogOpen,
+    ui.dayCloseOpen,
+    ui.editingDeadlineId,
+    ui.lensDeadlineId,
+    ui.quickAddOpen,
+    ui.selectedTaskId,
+  ]);
 
   const railVisible = !narrow && !ui.railCollapsed;
   const railDrawer = narrow && ui.railDrawerOpen;
@@ -162,6 +199,46 @@ export function Planner() {
             </button>
             <button type="button" className="text-ink-3" onClick={() => dayCloseDismiss(now)}>
               Not now
+            </button>
+          </div>
+        ) : null}
+
+        {sync.overwrites.map((overwrite) => (
+          <div
+            key={overwrite.id}
+            className="flex items-baseline gap-4 border-b border-hairline px-4 py-2 text-xs"
+          >
+            <span>A change from another device replaced {overwrite.what}.</span>
+            <button
+              type="button"
+              className="text-ink-3"
+              onClick={() => dismissOverwrite(overwrite.id)}
+            >
+              Dismiss
+            </button>
+          </div>
+        ))}
+
+        {calendar.changes.length > 0 ? (
+          <div className="flex items-baseline gap-4 border-b border-hairline px-4 py-2 text-xs">
+            <span>
+              {calendar.changes.length === 1
+                ? "One deadline changed on your calendar."
+                : `${calendar.changes.length} deadlines changed on your calendar.`}
+            </span>
+            <button
+              type="button"
+              className="underline"
+              onClick={() => set({ view: "settings" })}
+            >
+              See what changed
+            </button>
+            <button
+              type="button"
+              className="text-ink-3"
+              onClick={() => void markChangesSeen()}
+            >
+              Dismiss
             </button>
           </div>
         ) : null}
@@ -222,6 +299,27 @@ export function Planner() {
         <DeadlineEditor />
       </div>
     </DragProvider>
+  );
+}
+
+/**
+ * The tasks sharing a block with this one, in the order they are drawn, so
+ * Up and Down walk the block rather than the whole plan.
+ */
+function blockSiblings(
+  state: ReturnType<typeof usePlanner>,
+  lens: string | null,
+  taskId: string,
+): ReturnType<typeof plannedTasks> {
+  const task = taskById(state, taskId);
+  if (!task) return [];
+  const visible = plannedTasks(state, lens);
+  return visible.filter(
+    (other) =>
+      other.placement_level === task.placement_level &&
+      other.placement_day === task.placement_day &&
+      other.placement_week === task.placement_week &&
+      other.placement_month === task.placement_month,
   );
 }
 

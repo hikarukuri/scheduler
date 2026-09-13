@@ -2,8 +2,11 @@
  * Data model — spec §3, LOCKED.
  *
  * No entity here stores a time of day, a duration, or a start/end timestamp
- * for planned work. `size` is the only workload signal. `completed_at` and
- * `created_at` are record-keeping timestamps, not planned work.
+ * for planned work. `size` is the only workload signal. `completed_at`,
+ * `created_at` and `updated_at` are record-keeping timestamps, not planned work.
+ *
+ * `updated_at` is the comparison for last-write-wins across devices (Phase 2).
+ * It is stamped centrally in the store, never by a caller.
  */
 
 /** A calendar date with no time component, `YYYY-MM-DD`. */
@@ -22,6 +25,7 @@ export type Deadline = {
   source: DeadlineSource;
   calendar_event_id: string | null;
   archived_at: string | null;
+  updated_at: string;
 };
 
 export type Milestone = {
@@ -30,6 +34,7 @@ export type Milestone = {
   title: string;
   order: number;
   archived_at: string | null;
+  updated_at: string;
 };
 
 export type Size = "S" | "M" | "L";
@@ -55,6 +60,7 @@ export type Task = {
   created_at: string;
   completed_at: string | null;
   notes: string | null;
+  updated_at: string;
 };
 
 /** Spec §9. Customisable in settings, never inline. */
@@ -69,6 +75,8 @@ export type Settings = {
   monthsForward: number;
   /** §9 — whether `size` is shown at all. */
   showSize: boolean;
+  /** §7, §9 — the calendars whose all-day events become deadlines. */
+  watchedCalendarIds: string[];
 };
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -77,6 +85,7 @@ export const DEFAULT_SETTINGS: Settings = {
   accentColor: "#0F5B43",
   monthsForward: 12,
   showSize: true,
+  watchedCalendarIds: [],
 };
 
 export type PlannerState = {
@@ -87,6 +96,8 @@ export type PlannerState = {
   settings: Settings;
   /** §6.2 — the day close is offered once per day, never run automatically. */
   dayClose: { completedFor: ISODate | null; dismissedFor: ISODate | null };
+  /** Last-write-wins stamp for the settings row. */
+  prefsUpdatedAt: string;
 };
 
 export const EMPTY_STATE: PlannerState = {
@@ -96,4 +107,5 @@ export const EMPTY_STATE: PlannerState = {
   tasks: [],
   settings: DEFAULT_SETTINGS,
   dayClose: { completedFor: null, dismissedFor: null },
+  prefsUpdatedAt: "1970-01-01T00:00:00.000Z",
 };

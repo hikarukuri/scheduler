@@ -63,6 +63,8 @@ export function useDrag() {
   return useContext(DragContext);
 }
 
+const EDGE_PX = 64;
+const EDGE_SPEED = 14;
 const TOUCH_HOLD_MS = 220;
 const MOUSE_SLOP_PX = 4;
 const TOUCH_SLOP_PX = 10;
@@ -100,6 +102,7 @@ export function DragProvider({
   const target = useRef<DropSpec | null>(null);
   const dwell = useRef<{ key: string; at: number; fired: boolean } | null>(null);
   const endedAt = useRef(0);
+  const pointerAt = useRef({ x: 0, y: 0 });
 
   const onDropRef = useRef(onDrop);
   const onDwellRef = useRef(onDwell);
@@ -134,6 +137,7 @@ export function DragProvider({
     setOverKey(null);
   }, [preventTouchScroll]);
 
+
   const begin = useCallback(() => {
     const p = pending.current;
     if (!p || active.current) return;
@@ -147,6 +151,7 @@ export function DragProvider({
     const el = ghost.current;
     if (el) el.style.transform = `translate3d(${x + 12}px, ${y + 10}px, 0)`;
   }, []);
+
 
   const hitTest = useCallback((x: number, y: number) => {
     const under = document.elementFromPoint(x, y);
@@ -178,12 +183,42 @@ export function DragProvider({
     }
   }, []);
 
+  /**
+   * Carrying a task to a block that is off-screen — the common case on a phone,
+   * where a column and a half is visible — means the strip and the column under
+   * the pointer scroll themselves while the finger rests near an edge. The loop
+   * lives and dies with the drag.
+   */
+  useEffect(() => {
+    if (!dragged) return;
+    let frame = 0;
+    const step = () => {
+      const { x, y } = pointerAt.current;
+      const strip = document.querySelector<HTMLElement>(".column-strip");
+      if (strip) {
+        const box = strip.getBoundingClientRect();
+        if (x < box.left + EDGE_PX) strip.scrollLeft -= EDGE_SPEED;
+        else if (x > box.right - EDGE_PX) strip.scrollLeft += EDGE_SPEED;
+      }
+      const column = document.elementFromPoint(x, y)?.closest<HTMLElement>(".scroll-column");
+      if (column) {
+        const box = column.getBoundingClientRect();
+        if (y < box.top + EDGE_PX) column.scrollTop -= EDGE_SPEED;
+        else if (y > box.bottom - EDGE_PX) column.scrollTop += EDGE_SPEED;
+      }
+      frame = window.requestAnimationFrame(step);
+    };
+    frame = window.requestAnimationFrame(step);
+    return () => window.cancelAnimationFrame(frame);
+  }, [dragged]);
+
   useEffect(() => {
     function onMove(event: PointerEvent) {
       const p = pending.current;
       if (!p || event.pointerId !== p.pointerId) return;
       const dx = event.clientX - p.startX;
       const dy = event.clientY - p.startY;
+      pointerAt.current = { x: event.clientX, y: event.clientY };
 
       if (!active.current) {
         const moved = Math.hypot(dx, dy);
@@ -254,6 +289,7 @@ export function DragProvider({
         holdTimer: null,
       };
       pending.current = p;
+      pointerAt.current = { x: event.clientX, y: event.clientY };
       positionGhost(event.clientX, event.clientY);
       if (event.pointerType === "touch") {
         p.holdTimer = window.setTimeout(() => {

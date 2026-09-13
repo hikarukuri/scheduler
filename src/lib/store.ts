@@ -41,10 +41,62 @@ function persist() {
   }
 }
 
-function commit(next: PlannerState) {
-  state = next;
+type Row = { id: string; updated_at: string };
+
+/**
+ * Stamp `updated_at` on rows this change actually touched. Unchanged rows keep
+ * their object identity through every action, so a reference comparison finds
+ * exactly the changed ones — and that same identity is what the sync layer
+ * diffs to decide what to push.
+ */
+function stamp<T extends Row>(prev: T[], next: T[], at: string): T[] {
+  if (prev === next) return next;
+  const before = new Map(prev.map((row) => [row.id, row]));
+  let changed = false;
+  const out = next.map((row) => {
+    if (before.get(row.id) === row) return row;
+    changed = true;
+    return { ...row, updated_at: at };
+  });
+  return changed ? out : next;
+}
+
+/** Notified after every local change, so the sync layer can push it. */
+type LocalListener = (prev: PlannerState, next: PlannerState) => void;
+let localListener: LocalListener | null = null;
+
+export function onLocalChange(listener: LocalListener | null) {
+  localListener = listener;
+}
+
+function commit(next: PlannerState, options: { stamp?: boolean; notify?: boolean } = {}) {
+  const prev = state;
+  const at = new Date().toISOString();
+  const stamped =
+    options.stamp === false
+      ? next
+      : {
+          ...next,
+          deadlines: stamp(prev.deadlines, next.deadlines, at),
+          milestones: stamp(prev.milestones, next.milestones, at),
+          tasks: stamp(prev.tasks, next.tasks, at),
+          prefsUpdatedAt:
+            prev.settings !== next.settings || prev.dayClose !== next.dayClose
+              ? at
+              : next.prefsUpdatedAt,
+        };
+  state = stamped;
   persist();
+  if (options.notify !== false) localListener?.(prev, stamped);
   emit();
+}
+
+/**
+ * Apply a change that came from the cloud. It keeps the row's own `updated_at`
+ * and is not echoed back to the server.
+ */
+export function applyRemote(next: PlannerState) {
+  commit(next, { stamp: false, notify: false });
 }
 
 /** True once `load` has run, so the first paint can wait for stored data. */
@@ -64,14 +116,26 @@ export function load() {
     state = {
       ...EMPTY_STATE,
       ...parsed,
+      // A plan written before Phase 2 has no sync stamps. Backfill them from
+      // what the row does know, so it merges into the cloud on first sign-in
+      // instead of losing to an empty remote.
+      deadlines: (parsed.deadlines ?? []).map(backfill),
+      milestones: (parsed.milestones ?? []).map(backfill),
+      tasks: (parsed.tasks ?? []).map(backfill),
       settings: { ...DEFAULT_SETTINGS, ...(parsed.settings ?? {}) },
       dayClose: { ...EMPTY_STATE.dayClose, ...(parsed.dayClose ?? {}) },
+      prefsUpdatedAt: parsed.prefsUpdatedAt ?? EMPTY_STATE.prefsUpdatedAt,
     };
   } catch {
     // Keep the in-memory empty state; the stored value stays untouched.
   } finally {
     emit();
   }
+}
+
+function backfill<T extends { updated_at?: string; created_at?: string }>(row: T): T {
+  if (row.updated_at) return row;
+  return { ...row, updated_at: row.created_at ?? EMPTY_STATE.prefsUpdatedAt };
 }
 
 export function subscribe(listener: () => void): () => void {
@@ -111,6 +175,7 @@ export function addDeadline(draft: DeadlineDraft): Deadline {
     source: "manual",
     calendar_event_id: null,
     archived_at: null,
+    updated_at: now(),
   };
   commit({ ...state, deadlines: [...state.deadlines, deadline] });
   return deadline;
@@ -162,6 +227,7 @@ export function addMilestone(deadlineId: string, title: string): Milestone {
     title: title.trim(),
     order: siblings.length,
     archived_at: null,
+    updated_at: now(),
   };
   commit({ ...state, milestones: [...state.milestones, milestone] });
   return milestone;
@@ -229,6 +295,7 @@ export function addTask(draft: TaskDraft): PlaceResult & { task?: Task } {
     created_at: now(),
     completed_at: null,
     notes: draft.notes?.trim() || null,
+    updated_at: now(),
   };
   commit({ ...state, tasks: [...state.tasks, task] });
   return { ok: true, task };

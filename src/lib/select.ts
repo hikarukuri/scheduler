@@ -119,3 +119,78 @@ export function taskById(state: PlannerState, id: string | null): Task | null {
 
 /** §6.2 — the mark shown quietly once a task has been carried three times. */
 export const CARRY_LIMIT = 3;
+
+/**
+ * Grouped views of the task list, built once per render.
+ *
+ * Every block would otherwise scan the whole task array, which is fine at ten
+ * tasks and wasteful at a year of them. One pass here, map lookups everywhere
+ * else.
+ */
+export type TaskIndex = {
+  atMonth: Map<ISODate, Task[]>;
+  atWeek: Map<ISODate, Task[]>;
+  atDay: Map<ISODate, Task[]>;
+  belowMonth: Map<ISODate, number>;
+  belowWeek: Map<ISODate, number>;
+  backlog: Task[];
+};
+
+const NO_TASKS: Task[] = [];
+
+function push(map: Map<ISODate, Task[]>, key: ISODate, task: Task) {
+  const list = map.get(key);
+  if (list) list.push(task);
+  else map.set(key, [task]);
+}
+
+function bump(map: Map<ISODate, number>, key: ISODate) {
+  map.set(key, (map.get(key) ?? 0) + 1);
+}
+
+export function buildIndex(tasks: Task[]): TaskIndex {
+  const index: TaskIndex = {
+    atMonth: new Map(),
+    atWeek: new Map(),
+    atDay: new Map(),
+    belowMonth: new Map(),
+    belowWeek: new Map(),
+    backlog: [],
+  };
+  for (const task of tasks) {
+    switch (task.placement_level) {
+      case "day":
+        push(index.atDay, task.placement_day!, task);
+        bump(index.belowWeek, task.placement_week!);
+        bump(index.belowMonth, task.placement_month!);
+        break;
+      case "week":
+        push(index.atWeek, task.placement_week!, task);
+        bump(index.belowMonth, task.placement_month!);
+        break;
+      case "month":
+        push(index.atMonth, task.placement_month!, task);
+        break;
+      default:
+        index.backlog.push(task);
+    }
+  }
+  return index;
+}
+
+export function tasksAt(map: Map<ISODate, Task[]>, key: ISODate | null): Task[] {
+  return (key && map.get(key)) || NO_TASKS;
+}
+
+/**
+ * §6.4 — how full each day is. Counted across every open task, never through
+ * the deadline lens: the cap is a fact about the day, not about what you are
+ * currently looking at.
+ */
+export function loadByDay(tasks: Task[]): Map<ISODate, number> {
+  const load = new Map<ISODate, number>();
+  for (const task of tasks) {
+    if (task.status === "open" && task.placement_level === "day") bump(load, task.placement_day!);
+  }
+  return load;
+}

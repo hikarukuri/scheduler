@@ -17,8 +17,9 @@ legitimate act, not an undo. Nothing raises a task's level automatically.
     npm install
     npm run dev
 
-Phase 1 keeps everything in `localStorage`, in this browser, with no account and no
-network. Clearing site data clears the plan.
+With no environment variables the planner runs entirely in the browser's
+`localStorage` — no account, no network, complete. Signing in is what adds sync and
+the calendar; see [Setting up the cloud](#setting-up-the-cloud).
 
 ## The interface
 
@@ -35,6 +36,10 @@ Deadlines are a lens over the columns, not a column of their own: two deadlines 
 fall in the same month and one project can span four, so a week must exist once, in
 one place, showing everything committed to it.
 
+Selecting a day opens it in a fifth pane, where its tasks have room to show which
+deadline each belongs to. The Days column answers *which day*; the Day pane answers
+*what is on it*.
+
 The backlog — level `none` — sits outside calendar time, as a collapsible panel in
 the bottom-right. Collapsed, it is still a drop target, so a task can be returned to
 the backlog without opening it first.
@@ -47,8 +52,10 @@ collapsing to tabs, and the rail becomes a drawer.
 | key | |
 |---|---|
 | `n` | quick add |
+| `b` | show or hide the backlog |
 | `→` | promote the selected task one level, into the selected block of the next column |
 | `←` | demote the selected task one level |
+| `↑` `↓` | move between tasks in the same block |
 | `Enter` | mark the selected task done |
 | `Escape` | close a panel, or deselect |
 
@@ -95,15 +102,69 @@ JP) so a title mixing Latin and Japanese renders without a step in weight or siz
 Motion is limited to two things, both brief: a task landing after a move, and a column
 expanding. Both are disabled under `prefers-reduced-motion`.
 
+## Setting up the cloud
+
+Phases 2 and 3 are optional at runtime: configure them and the app syncs and reads
+your calendar; leave them unset and it stays local. Copy `.env.example` to
+`.env.local` and fill it in.
+
+**1. Supabase.** Create a project, then run `supabase/migrations/0001_init.sql` in the
+SQL editor. It creates the tables, the row-level security policies, and the realtime
+publication. It is idempotent, so re-running it is safe.
+
+**2. Google sign-in.** In Google Cloud, create an OAuth client (Web application) and
+enable the Google Calendar API. Add Supabase's callback
+(`https://<project>.supabase.co/auth/v1/callback`) as an authorised redirect URI. Put
+the client id and secret into Supabase → Authentication → Providers → Google, and the
+same pair into `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` — the server needs them to
+exchange the stored refresh token, which Supabase does not refresh for you.
+
+**3. Deploy.** Vercel builds your default branch. Set the same variables in the
+project settings. `NEXT_PUBLIC_SITE_URL` must be the public HTTPS origin, because
+that is where Google sends calendar push notifications; they cannot reach localhost,
+so in local development the 15-minute poll does the work instead.
+
+The first sign-in merges whatever is already in this browser into the cloud, so a plan
+built in Phase 1 is not lost.
+
+## What the cloud does, and does not
+
+Sign-in exists to get a Google token and to keep the data private — there is no user
+management, no sharing, no roles. Row-level security means a row is reachable only by
+the account that owns it, and the placement rules from §3 are enforced again as
+database constraints, so a bad write is rejected rather than stored.
+
+Local state stays the source of truth for the interface: every action applies at once
+and is pushed afterwards, so the columns never wait on a network. Conflicts resolve
+last-write-wins on `updated_at`, and when a remote write replaces something different
+that was here, a line says so rather than swallowing it.
+
+The calendar is read-only in the strict sense: the only scope requested is
+`calendar.readonly`, and nothing in the codebase issues a write. Only all-day events
+on the calendars you choose become deadlines; timed events are dropped before they
+reach the rest of the app. An imported deadline's title and date always follow its
+source event, while `kind` and `notes` stay yours. When a source event moves or
+disappears the change is applied *and* reported.
+
 ## Build phases
 
 - **Phase 1 — complete.** The column interface, local only: deadlines, milestones,
   tasks, expansion and selection, placement in both directions by pointer and
   keyboard, per-day cap, day close, quick add, list view, archive, settings.
-- **Phase 2** — Supabase, Google sign-in, migration of local data, Realtime sync.
-- **Phase 3** — Google Calendar read-only, all-day import rule, push notifications
-  with a polling fallback. The data model and the deadline editor already carry
-  `source`, `calendar_event_id`, and the rule that imported deadlines are read-only
-  except for `kind` and `notes`.
-- **Phase 4** — keyboard coverage, touch drag on real devices, carry-count treatment,
-  performance across a year of data.
+- **Phase 2 — complete.** Supabase schema with row-level security, Google sign-in,
+  merge-on-first-sign-in of local data, Realtime sync, last-write-wins with the
+  overwrite reported.
+- **Phase 3 — complete.** Google Calendar read-only, the all-day import rule, push
+  notification channels renewed before they expire, a 15-minute polling fallback, and
+  calendar selection in settings.
+- **Phase 4 — complete.** Keyboard coverage, pointer drag that also works by touch
+  with edge auto-scrolling, narrow-screen column scrolling, the carry-count marker,
+  empty states, and grouped indexes so a year of tasks does not rescan the list for
+  every block.
+
+## Two columns that are not in §3
+
+`user_id` and `updated_at` exist on every stored row and are not in the spec's data
+model. Cloud storage cannot work without them: one is row ownership, the other is the
+comparison that makes last-write-wins possible. Neither represents a time of day for
+planned work.

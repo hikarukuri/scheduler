@@ -178,6 +178,11 @@ textarea::placeholder {
   touch-action: none;
 }
 
+/* Edge auto-scrolling steps the strip by hand, so smooth scrolling must stand down. */
+.dragging-active .column-strip {
+  scroll-behavior: auto;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .task-landed,
   .column-open {
