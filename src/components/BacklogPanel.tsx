@@ -18,7 +18,7 @@ import { TaskRow } from "./TaskRow";
  */
 export function BacklogPanel() {
   const state = usePlanner();
-  const { ui, set } = useUi();
+  const { ui, set, markMoved } = useUi();
   const drag = useDrag();
   const [draft, setDraft] = useState("");
 
@@ -47,7 +47,10 @@ export function BacklogPanel() {
 
   function submit() {
     const title = draft.trim();
-    if (title) addTask({ title, deadline_id: ui.lensDeadlineId });
+    if (title) {
+      const result = addTask({ title, deadline_id: ui.lensDeadlineId });
+      if (result.ok && result.task) markMoved(result.task.id);
+    }
     setDraft("");
   }
 

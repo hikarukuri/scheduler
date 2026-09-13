@@ -122,14 +122,17 @@ textarea::placeholder {
 }
 
 /**
- * Motion — spec §8.4. Two permitted uses only: a task moving between columns,
- * and a column expanding or collapsing. Both brief. No entrance animations, no
- * hover transitions on rows.
+ * Motion. A task settles in when it arrives — moved between columns, or newly
+ * added anywhere — and a column eases open. Rows ease on hover. All of it brief,
+ * and all of it off under prefers-reduced-motion.
  */
 @keyframes task-landed {
   from {
     opacity: 0;
-    transform: translateY(-3px);
+    transform: translateY(-4px);
+  }
+  60% {
+    opacity: 1;
   }
   to {
     opacity: 1;
@@ -138,7 +141,7 @@ textarea::placeholder {
 }
 
 .task-landed {
-  animation: task-landed 160ms ease-out;
+  animation: task-landed 220ms cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 
 @keyframes column-open {
@@ -156,9 +159,17 @@ textarea::placeholder {
   animation: column-open 150ms ease-out;
 }
 
-/* A row shows it can be picked up. A static tint: §8.4 permits no hover transitions. */
+/* A row shows it can be picked up, easing in and out of the tint. */
+.task-row {
+  transition: background-color 140ms ease;
+}
 .task-row:hover {
   background: var(--selected);
+}
+
+/* The per-block Add affordance fades in on hover rather than popping. */
+.add-affordance {
+  transition: opacity 140ms ease;
 }
 
 /* The task following the pointer during a drag (§6.3). */
@@ -192,6 +203,10 @@ textarea::placeholder {
   .task-landed,
   .column-open {
     animation: none;
+  }
+  .task-row,
+  .add-affordance {
+    transition: none;
   }
 }
 

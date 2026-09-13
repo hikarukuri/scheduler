@@ -35,7 +35,7 @@ export function DayPanel({
   deadlines: Deadline[];
 }) {
   const state = usePlanner();
-  const { ui, set, notify } = useUi();
+  const { ui, set, notify, markMoved } = useUi();
   const drag = useDrag();
   const [draft, setDraft] = useState("");
   const day = ui.selectedDay;
@@ -69,7 +69,10 @@ export function DayPanel({
       placement: { level: "day", date: day! },
     });
     if (!result.ok) notify(`${result.reason} Nothing was added.`, true);
-    else setDraft("");
+    else {
+      if (result.task) markMoved(result.task.id);
+      setDraft("");
+    }
   }
 
   return (

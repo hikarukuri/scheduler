@@ -106,8 +106,9 @@ Source Serif 4 for block labels, deadline titles and countdowns; Inter for task 
 and controls. Each chain falls through to a Japanese face (Noto Serif JP, Noto Sans
 JP) so a title mixing Latin and Japanese renders without a step in weight or size.
 
-Motion is limited to two things, both brief: a task landing after a move, and a column
-expanding. Both are disabled under `prefers-reduced-motion`.
+Motion is brief and everywhere it helps: a task settles in when it arrives — moved
+between columns or newly added anywhere — a column eases open, and rows ease into their
+hover tint. All of it is off under `prefers-reduced-motion`.
 
 ## Turning on sync
 
@@ -205,6 +206,9 @@ Three deliberate changes, each agreed rather than assumed:
 - **A fifth pane**, for one day, drilled from the Days column — §12 had settled
   against a fifth column for a single *task*, which is still absent; task detail
   expands in place.
+- **§8.4's motion rules are relaxed.** It forbade entrance animations and hover
+  transitions on rows; both are in, by later decision, because a row that appears
+  without settling and a tint that snaps both read as abrupt.
 
 ## Two columns that are not in §3
 

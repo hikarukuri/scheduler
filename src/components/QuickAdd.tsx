@@ -14,7 +14,7 @@ import { useUi, usePlanner } from "@/lib/ui";
  */
 export function QuickAdd() {
   const state = usePlanner();
-  const { ui, set, notify } = useUi();
+  const { ui, set, notify, markMoved } = useUi();
   const [input, setInput] = useState("");
   const deadlines = activeDeadlines(state);
   const parsed = useMemo(() => parseQuickAdd(input, deadlines), [input, deadlines]);
@@ -50,6 +50,7 @@ export function QuickAdd() {
         selectedWeek: parsed.placement.level === "month" ? null : startOfWeek(date),
       });
     }
+    if (result.task) markMoved(result.task.id);
     close();
   }
 

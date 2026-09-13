@@ -57,7 +57,7 @@ export function Block({
   children?: React.ReactNode;
 }) {
   const drag = useDrag();
-  const { ui, set, notify } = useUi();
+  const { ui, set, notify, markMoved } = useUi();
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState("");
   const over = drag.overKey === dropKey(level, date);
@@ -77,6 +77,7 @@ export function Block({
       placement: { level, date },
     });
     if (!result.ok) notify(`${result.reason} Nothing was added.`, true);
+    else if (result.task) markMoved(result.task.id);
     setDraft("");
     return true;
   }
@@ -210,7 +211,7 @@ export function Block({
             setAdding(true);
           }}
           className={[
-            "mt-1 text-2xs text-ink-3 focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100",
+            "add-affordance mt-1 text-2xs text-ink-3 focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100",
             selected ? "" : "opacity-0",
           ].join(" ")}
         >
